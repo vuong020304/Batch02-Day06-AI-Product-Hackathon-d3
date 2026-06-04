@@ -2,7 +2,9 @@
 node_modules/
 .env
 *.log
+__pycache__/
+*.py[cod]
+.venv/
+dist/
 
-# Prototype code (team repo: Day06-Lop-NhomXX)
-codebase/backend/
-codebase/frontend/
+# Keep prototype source code in codebase/ for submission.

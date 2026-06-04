@@ -1,7 +1,11 @@
 import json
 from config import LLM_API_KEY, LLM_BASE_URL, LLM_MODEL
-from openai import OpenAI
 from tools import TOOL_DEFINITIONS, execute_tool
+
+try:
+    from openai import OpenAI
+except ImportError:
+    OpenAI = None
 
 
 def format_drug_context(drugs: list[dict]) -> str:
@@ -19,7 +23,7 @@ def format_drug_context(drugs: list[dict]) -> str:
 
 
 def get_client():
-    if not LLM_API_KEY:
+    if not LLM_API_KEY or OpenAI is None:
         return None
     return OpenAI(api_key=LLM_API_KEY, base_url=LLM_BASE_URL)
 
