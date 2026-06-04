@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   CalendarClock,
@@ -14,15 +14,24 @@ import {
   X
 } from "lucide-react";
 import { askQuestion, planPrescription, searchDrugs } from "./api";
-import type { ChatResponse, DrugDetail, DrugSummary, PlanResponse } from "./types";
+import type { DrugDetail, DrugSummary, PlanResponse } from "./types";
 
 const quickQueries = ["amlo", "paracetmol", "digoxin", "diltiazem"];
 
+type ChatMessage = {
+  id: number;
+  role: "user" | "assistant";
+  text: string;
+  source?: string;
+};
+
 function sourceLabel(source?: string) {
-  return source === "openai" || source === "llm" ? "Tra loi tu AI duoc rang buoc boi DB" : "Dang dung du lieu DB an toan";
+  return source === "openai" || source === "llm"
+    ? "Trả lời từ AI, được ràng buộc bởi dữ liệu thuốc"
+    : "Đang dùng dữ liệu thuốc an toàn";
 }
 
-function shortText(value?: string | null, fallback = "Chua co tom tat ro trong DB.") {
+function shortText(value?: string | null, fallback = "Chưa có tóm tắt rõ trong dữ liệu.") {
   if (!value?.trim()) return fallback;
   return value.length > 180 ? `${value.slice(0, 177)}...` : value;
 }
@@ -33,7 +42,7 @@ export default function App() {
   const [selected, setSelected] = useState<DrugSummary[]>([]);
   const [plan, setPlan] = useState<PlanResponse | null>(null);
   const [question, setQuestion] = useState("");
-  const [chat, setChat] = useState<ChatResponse | null>(null);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [notice, setNotice] = useState<string | null>(null);
   const [loadingSearch, setLoadingSearch] = useState(false);
   const [loadingPlan, setLoadingPlan] = useState(false);
@@ -56,7 +65,7 @@ export default function App() {
         setResults(data.results);
         setNotice(data.fallback_message ?? null);
       } catch (error) {
-        setNotice(error instanceof Error ? error.message : "Khong goi duoc API search.");
+        setNotice(error instanceof Error ? error.message : "Không gọi được API tìm kiếm.");
       } finally {
         setLoadingSearch(false);
       }
@@ -68,14 +77,14 @@ export default function App() {
   useEffect(() => {
     if (selectedIds.length === 0) {
       setPlan(null);
-      setChat(null);
+      setChatMessages([]);
       return;
     }
 
     setLoadingPlan(true);
     planPrescription(selectedIds)
       .then(setPlan)
-      .catch((error) => setNotice(error instanceof Error ? error.message : "Khong tao duoc lich uong."))
+      .catch((error) => setNotice(error instanceof Error ? error.message : "Không tạo được lịch uống thuốc."))
       .finally(() => setLoadingPlan(false));
   }, [selectedIds]);
 
@@ -96,11 +105,20 @@ export default function App() {
 
     setLoadingChat(true);
     try {
-      const answer = await askQuestion(selectedIds, question.trim());
-      setChat(answer);
+      const trimmedQuestion = question.trim();
+      const questionId = Date.now();
+      setChatMessages((current) => [
+        ...current,
+        { id: questionId, role: "user", text: trimmedQuestion }
+      ]);
       setQuestion("");
+      const answer = await askQuestion(selectedIds, trimmedQuestion);
+      setChatMessages((current) => [
+        ...current,
+        { id: questionId + 1, role: "assistant", text: answer.answer, source: answer.source }
+      ]);
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "Khong gui duoc cau hoi.");
+      setNotice(error instanceof Error ? error.message : "Không gửi được câu hỏi.");
     } finally {
       setLoadingChat(false);
     }
@@ -115,12 +133,14 @@ export default function App() {
               <HeartPulse className="h-7 w-7" aria-hidden="true" />
             </div>
             <div>
-              <h1 className="text-xl font-semibold text-[#12333a] sm:text-2xl">Long Chau Care</h1>
-              <p className="text-sm text-[#5c6f68]">Tim thuoc, lap don tam, hoi AI va xem lich uong trong mot man hinh.</p>
+              <h1 className="text-xl font-semibold text-[#12333a] sm:text-2xl">Long Châu Care</h1>
+              <p className="text-sm text-[#5c6f68]">
+                Tìm thuốc, lập đơn tạm, hỏi AI và xem lịch uống trong một màn hình.
+              </p>
             </div>
           </div>
           <div className="rounded-md border border-[#cfe5dc] bg-[#edf8f3] px-3 py-2 text-sm font-medium text-[#0f766e]">
-            DB la nguon chinh - AI chi dien giai
+            Dữ liệu thuốc là nguồn chính - AI chỉ diễn giải
           </div>
         </header>
 
@@ -128,7 +148,7 @@ export default function App() {
           <div className="flex items-start gap-3 rounded-lg border border-[#f0d7a1] bg-[#fff8e6] px-4 py-3 text-sm text-[#6d5521]">
             <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" aria-hidden="true" />
             <p className="flex-1">{notice}</p>
-            <button className="rounded-md p-1 hover:bg-black/5" onClick={() => setNotice(null)} aria-label="Dong thong bao">
+            <button className="rounded-md p-1 hover:bg-black/5" onClick={() => setNotice(null)} aria-label="Đóng thông báo">
               <X className="h-4 w-4" aria-hidden="true" />
             </button>
           </div>
@@ -152,25 +172,23 @@ export default function App() {
           </aside>
 
           <section className="flex flex-col gap-5">
-            <div>
-              <ChatPanel
-                selectedCount={selected.length}
-                question={question}
-                chat={chat}
-                loading={loadingChat}
-                onQuestionChange={setQuestion}
-                onAsk={handleAsk}
-              />
-            </div>
+            <ChatPanel
+              selectedCount={selected.length}
+              question={question}
+              messages={chatMessages}
+              loading={loadingChat}
+              onQuestionChange={setQuestion}
+              onAsk={handleAsk}
+            />
 
             <TimelinePanel plan={plan} loading={loadingPlan} drugNameById={drugNameById} />
 
             <div className="rounded-lg border border-[#cfe5dc] bg-[#edf8f3] p-4 text-sm leading-6 text-[#31534f]">
               <div className="mb-2 flex items-center gap-2 font-semibold text-[#0f766e]">
                 <ShieldCheck className="h-5 w-5" aria-hidden="true" />
-                Luu y an toan
+                Lưu ý an toàn
               </div>
-              {plan?.safety_note || "Thong tin chi dung de giai thich, khong thay the bac si hoac duoc si."}
+              {plan?.safety_note || "Thông tin chỉ dùng để giải thích, không thay thế bác sĩ hoặc dược sĩ."}
             </div>
           </section>
         </section>
@@ -195,7 +213,7 @@ function SearchPanel({
   return (
     <div className="rounded-lg border border-[#dbe9df] bg-white p-4 shadow-soft">
       <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-base font-semibold text-[#17313a]">Tim thuoc</h2>
+        <h2 className="text-base font-semibold text-[#17313a]">Tìm thuốc</h2>
         {loading && <Loader2 className="h-5 w-5 animate-spin text-[#0f766e]" aria-hidden="true" />}
       </div>
       <label className="relative block">
@@ -204,7 +222,7 @@ function SearchPanel({
           value={query}
           onChange={(event) => onQueryChange(event.target.value)}
           className="h-12 w-full rounded-lg border border-[#cfe0d7] bg-[#fbfdfb] pl-10 pr-3 text-base outline-none transition focus:border-[#0f766e] focus:ring-4 focus:ring-[#0f766e]/12"
-          placeholder="Nhap ten thuoc hoac hoat chat"
+          placeholder="Nhập tên thuốc hoặc hoạt chất"
         />
       </label>
       <div className="mt-3 flex flex-wrap gap-2">
@@ -232,8 +250,8 @@ function SearchPanel({
               </div>
               <div className="min-w-0 flex-1">
                 <p className="line-clamp-2 text-sm font-semibold text-[#17313a]">{drug.name}</p>
-                <p className="mt-1 text-xs text-[#667a72]">{drug.active_ingredient || "Chua ro hoat chat"}</p>
-                {drug.needs_confirmation && <p className="mt-2 text-xs font-medium text-[#9a6b10]">Can xac nhan ten/ham luong</p>}
+                <p className="mt-1 text-xs text-[#667a72]">{drug.active_ingredient || "Chưa rõ hoạt chất"}</p>
+                {drug.needs_confirmation && <p className="mt-2 text-xs font-medium text-[#9a6b10]">Cần xác nhận tên/hàm lượng</p>}
               </div>
               <Plus className="mt-1 h-4 w-4 text-[#0f766e] opacity-70 transition group-hover:opacity-100" aria-hidden="true" />
             </div>
@@ -256,12 +274,12 @@ function PrescriptionPanel({
   return (
     <div className="rounded-lg border border-[#dbe9df] bg-white p-4 shadow-soft">
       <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-base font-semibold text-[#17313a]">Don thuoc tam</h2>
-        <span className="rounded-md bg-[#edf8f3] px-2 py-1 text-xs font-semibold text-[#0f766e]">{selected.length} thuoc</span>
+        <h2 className="text-base font-semibold text-[#17313a]">Đơn thuốc tạm</h2>
+        <span className="rounded-md bg-[#edf8f3] px-2 py-1 text-xs font-semibold text-[#0f766e]">{selected.length} thuốc</span>
       </div>
       {selected.length === 0 ? (
         <div className="rounded-lg border border-dashed border-[#cfe0d7] p-4 text-sm text-[#667a72]">
-          Chon thuoc tu danh sach ben tren de xem summary, timeline va canh bao.
+          Chọn thuốc từ danh sách bên trên để xem tóm tắt và timeline.
         </div>
       ) : (
         <div className="flex max-h-[520px] flex-col gap-3 overflow-auto pr-1">
@@ -272,24 +290,24 @@ function PrescriptionPanel({
                 <div className="flex items-start gap-2">
                   <div className="min-w-0 flex-1">
                     <p className="line-clamp-2 text-sm font-semibold text-[#17313a]">{drug.name}</p>
-                    <p className="mt-1 text-xs text-[#667a72]">{drug.active_ingredient || drug.dosage_form || "Thuoc da chon"}</p>
+                    <p className="mt-1 text-xs text-[#667a72]">{drug.active_ingredient || drug.dosage_form || "Thuốc đã chọn"}</p>
                   </div>
                   <button
                     onClick={() => onRemoveDrug(drug.id)}
                     className="rounded-md p-2 text-[#8b4545] hover:bg-[#fff1f1]"
-                    aria-label={`Xoa ${drug.name}`}
+                    aria-label={`Xóa ${drug.name}`}
                   >
                     <Trash2 className="h-4 w-4" aria-hidden="true" />
                   </button>
                 </div>
                 <div className="mt-3 rounded-md border border-[#e3eee8] bg-white px-3 py-2 text-xs leading-5 text-[#4f635b]">
-                  <span className="font-semibold text-[#0f766e]">Summary: </span>
+                  <span className="font-semibold text-[#0f766e]">Tóm tắt: </span>
                   {shortText(detail?.indication ?? drug.indication)}
                 </div>
                 {detail?.dosage && (
                   <div className="mt-2 rounded-md border border-[#e3eee8] bg-white px-3 py-2 text-xs leading-5 text-[#4f635b]">
-                    <span className="font-semibold text-[#0f766e]">Cach dung: </span>
-                    {shortText(detail.dosage, "Chua co lieu dung ro trong DB.")}
+                    <span className="font-semibold text-[#0f766e]">Cách dùng: </span>
+                    {shortText(detail.dosage, "Chưa có liều dùng rõ trong dữ liệu.")}
                   </div>
                 )}
               </div>
@@ -304,53 +322,131 @@ function PrescriptionPanel({
 function ChatPanel({
   selectedCount,
   question,
-  chat,
+  messages,
   loading,
   onQuestionChange,
   onAsk
 }: {
   selectedCount: number;
   question: string;
-  chat: ChatResponse | null;
+  messages: ChatMessage[];
   loading: boolean;
   onQuestionChange: (value: string) => void;
   onAsk: (event: FormEvent) => void;
 }) {
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [messages, loading]);
+
   return (
-    <div className="rounded-lg border border-[#dbe9df] bg-white p-5 shadow-soft">
-      <div className="mb-4 flex items-center gap-2">
-        <MessageCircle className="h-5 w-5 text-[#0f766e]" aria-hidden="true" />
-        <div>
-          <h2 className="text-lg font-semibold text-[#17313a]">Chatbot tu van don thuoc</h2>
-          <p className="mt-1 text-sm text-[#667a72]">Khu vuc hoi dap chinh, dung cac thuoc trong don tam.</p>
+    <div className="overflow-hidden rounded-lg border border-[#cfe0d7] bg-white shadow-soft">
+      <div className="border-b border-[#dbe9df] bg-[#f0faf5] px-5 py-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-3">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-[#0f766e] text-white">
+              <MessageCircle className="h-6 w-6" aria-hidden="true" />
+            </div>
+            <div>
+              <h2 className="text-lg font-semibold text-[#17313a]">Trợ lý hỏi đáp đơn thuốc</h2>
+              <p className="mt-1 text-sm text-[#667a72]">Đặt câu hỏi theo ngôn ngữ tự nhiên, dựa trên các thuốc đã chọn.</p>
+            </div>
+          </div>
+          <span className="w-fit rounded-md border border-[#cfe5dc] bg-white px-3 py-1.5 text-xs font-semibold text-[#0f766e]">
+            {selectedCount > 0 ? `${selectedCount} thuốc trong đơn` : "Chưa chọn thuốc"}
+          </span>
         </div>
       </div>
-      <form onSubmit={onAsk} className="space-y-3">
+
+      <div className="flex h-[520px] flex-col bg-[#fbfdfb]">
+        <div className="flex-1 overflow-auto p-5">
+          <div className="mb-4 flex items-start gap-3">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#dff3eb] text-[#0f766e]">
+              <MessageCircle className="h-5 w-5" aria-hidden="true" />
+            </div>
+            <div className="max-w-3xl rounded-lg rounded-tl-sm border border-[#dbe9df] bg-white px-4 py-3 text-sm leading-6 text-[#31534f] shadow-sm">
+              Mình có thể giúp bạn hiểu cách dùng thuốc, thời điểm uống, tác dụng phụ cần để ý và tương tác có thể xảy ra.
+            </div>
+          </div>
+
+          {messages.length > 0 ? (
+            <div className="space-y-4">
+              {messages.map((message) =>
+                message.role === "user" ? (
+                  <div key={message.id} className="flex justify-end">
+                    <div className="max-w-3xl rounded-lg rounded-tr-sm bg-[#0f766e] px-4 py-3 text-sm leading-6 text-white shadow-sm">
+                      {message.text}
+                    </div>
+                  </div>
+                ) : (
+                  <div key={message.id} className="flex items-start gap-3">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#0f766e] text-white">
+                      <MessageCircle className="h-5 w-5" aria-hidden="true" />
+                    </div>
+                    <div className="max-w-3xl rounded-lg rounded-tl-sm border border-[#cfe5dc] bg-white px-4 py-3 shadow-sm">
+                      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-[#0f766e]">{sourceLabel(message.source)}</p>
+                      <p className="whitespace-pre-line text-sm leading-6 text-[#31534f]">{message.text}</p>
+                    </div>
+                  </div>
+                )
+              )}
+            </div>
+          ) : (
+            <div className="rounded-lg border border-dashed border-[#cfe0d7] bg-white/70 p-5 text-sm leading-6 text-[#667a72]">
+              Thêm thuốc vào đơn tạm, rồi hỏi chatbot về cách uống, tương tác hoặc tác dụng phụ.
+            </div>
+          )}
+          {loading && <TypingBubble />}
+          <div ref={messagesEndRef} />
+        </div>
+
+        <form onSubmit={onAsk} className="border-t border-[#dbe9df] bg-white p-3">
+          <div className="flex items-end gap-2 rounded-lg border border-[#cfe0d7] bg-[#fbfdfb] p-2 focus-within:border-[#0f766e] focus-within:ring-4 focus-within:ring-[#0f766e]/12">
         <textarea
           value={question}
           onChange={(event) => onQuestionChange(event.target.value)}
-          className="min-h-40 w-full resize-none rounded-lg border border-[#cfe0d7] bg-[#fbfdfb] p-3 text-sm outline-none transition focus:border-[#0f766e] focus:ring-4 focus:ring-[#0f766e]/12"
-          placeholder="Vi du: don nay uong luc nao, co can tranh canxi khong?"
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && !event.shiftKey) {
+              event.preventDefault();
+              event.currentTarget.form?.requestSubmit();
+            }
+          }}
+          rows={1}
+          className="max-h-28 min-h-10 flex-1 resize-none border-0 bg-transparent px-2 py-2 text-sm leading-6 outline-none"
+          placeholder="Nhập câu hỏi về đơn thuốc..."
         />
-        <button
-          disabled={loading || !question.trim() || selectedCount === 0}
-          className="flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-[#0f766e] px-4 text-sm font-semibold text-white transition hover:bg-[#0d665f] disabled:cursor-not-allowed disabled:bg-[#9fbab2]"
-        >
-          {loading ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <ChevronRight className="h-4 w-4" aria-hidden="true" />}
-          Gui cau hoi
-        </button>
-      </form>
+            <button
+              disabled={loading || !question.trim() || selectedCount === 0}
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#0f766e] text-white transition hover:bg-[#0d665f] disabled:cursor-not-allowed disabled:bg-[#9fbab2]"
+              aria-label="Gửi câu hỏi"
+            >
+              {loading ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <ChevronRight className="h-5 w-5" aria-hidden="true" />}
+            </button>
+          </div>
+          <p className="mt-2 px-1 text-xs leading-5 text-[#667a72]">
+            AI chỉ diễn giải từ dữ liệu thuốc. Khi không chắc, hãy hỏi dược sĩ/bác sĩ.
+          </p>
+        </form>
+      </div>
+    </div>
+  );
+}
 
-      {chat ? (
-        <div className="mt-4 rounded-lg border border-[#dbe9df] bg-[#fbfdfb] p-4">
-          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-[#0f766e]">{sourceLabel(chat.source)}</p>
-          <p className="text-sm leading-6 text-[#31534f]">{chat.answer}</p>
+function TypingBubble() {
+  return (
+    <div className="mt-4 flex items-start gap-3">
+      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#0f766e] text-white">
+        <MessageCircle className="h-5 w-5" aria-hidden="true" />
+      </div>
+      <div className="rounded-lg rounded-tl-sm border border-[#cfe5dc] bg-white px-4 py-3 shadow-sm">
+        <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-[#0f766e]">AI đang trả lời</div>
+        <div className="flex items-center gap-1.5">
+          <span className="h-2 w-2 animate-bounce rounded-full bg-[#0f766e]" />
+          <span className="h-2 w-2 animate-bounce rounded-full bg-[#0f766e] [animation-delay:120ms]" />
+          <span className="h-2 w-2 animate-bounce rounded-full bg-[#0f766e] [animation-delay:240ms]" />
         </div>
-      ) : (
-        <div className="mt-4">
-          <EmptyState text="Them thuoc vao don tam, roi hoi chatbot ve cach uong, tuong tac hoac tac dung phu." />
-        </div>
-      )}
+      </div>
     </div>
   );
 }
@@ -369,7 +465,7 @@ function TimelinePanel({
       <div className="mb-4 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <CalendarClock className="h-5 w-5 text-[#0f766e]" aria-hidden="true" />
-          <h2 className="text-lg font-semibold text-[#17313a]">Timeline uong thuoc</h2>
+          <h2 className="text-lg font-semibold text-[#17313a]">Timeline uống thuốc</h2>
         </div>
         {loading && <Loader2 className="h-5 w-5 animate-spin text-[#0f766e]" aria-hidden="true" />}
       </div>
@@ -387,7 +483,7 @@ function TimelinePanel({
                     </div>
                   ))
                 ) : (
-                  <p className="text-sm text-[#8a9a94]">Khong co thuoc</p>
+                  <p className="text-sm text-[#8a9a94]">Không có thuốc</p>
                 )}
               </div>
               <p className="mt-3 text-xs leading-5 text-[#667a72]">{item.instruction}</p>
@@ -395,7 +491,7 @@ function TimelinePanel({
           ))}
         </div>
       ) : (
-        <EmptyState text="Timeline se tu cap nhat khi ban chon thuoc vao don." />
+        <EmptyState text="Timeline sẽ tự cập nhật khi bạn chọn thuốc vào đơn." />
       )}
     </div>
   );

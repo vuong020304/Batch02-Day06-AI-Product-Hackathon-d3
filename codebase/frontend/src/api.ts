@@ -2,7 +2,7 @@ import type { ChatResponse, DrugDetail, PlanResponse, SearchResponse } from "./t
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "";
 const SAFETY_NOTE =
-  "Thong tin chi dung de giai thich don gian, khong thay the bac si hoac duoc si. Hay hoi duoc si/bac si khi khong chac.";
+  "Thông tin chỉ dùng để giải thích đơn giản, không thay thế bác sĩ hoặc dược sĩ. Hãy hỏi dược sĩ/bác sĩ khi không chắc.";
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
@@ -47,7 +47,7 @@ export async function planPrescription(drugIds: number[]): Promise<PlanResponse>
       method: "POST",
       body: JSON.stringify({
         drug_ids: drugIds,
-        question: "Hay kiem tra tuong tac va de xuat lich uong thuoc trong ngay."
+        question: "Hãy kiểm tra tương tác và đề xuất lịch uống thuốc trong ngày."
       })
     })
   ]);
@@ -66,7 +66,7 @@ export function askQuestion(drugIds: number[], question: string): Promise<ChatRe
     method: "POST",
     body: JSON.stringify({ drug_ids: drugIds, question })
   }).then((data) => ({
-    answer: data.answer.cau_tra_loi || data.answer.phan_tich || "Chua co cau tra loi.",
+    answer: data.answer.cau_tra_loi || data.answer.phan_tich || "Chưa có câu trả lời.",
     source: data.source,
     related_drugs: [],
     safety_note: SAFETY_NOTE
@@ -140,7 +140,7 @@ function toDrugSummary(drug: BackendSearchDrug): DrugDetail {
 
 function toDrugDetail(drug?: BackendSummaryDrug): DrugDetail {
   if (!drug) {
-    throw new Error("Khong tim thay thuoc trong phan hoi backend.");
+    throw new Error("Không tìm thấy thuốc trong phản hồi backend.");
   }
 
   return {
@@ -167,9 +167,9 @@ function buildTimeline(drugs: DrugDetail[]) {
     .map((drug) => drug.id);
 
   return [
-    { time: "07:00", label: "Sang", drug_ids: morning, instruction: "Uong theo dung don; hoi duoc si neu DB khong ghi ro truoc/sau an." },
-    { time: "12:00", label: "Trua", drug_ids: noon, instruction: "Chi ap dung cho thuoc co dau hieu dung nhieu lan trong ngay." },
-    { time: "20:00", label: "Toi", drug_ids: evening, instruction: "Kiem tra lai neu thuoc gay buon ngu, chong mat hoac ha huyet ap." }
+    { time: "07:00", label: "Sáng", drug_ids: morning, instruction: "Uống theo đúng đơn; hỏi dược sĩ nếu dữ liệu chưa ghi rõ trước/sau ăn." },
+    { time: "12:00", label: "Trưa", drug_ids: noon, instruction: "Chỉ áp dụng cho thuốc có dấu hiệu dùng nhiều lần trong ngày." },
+    { time: "20:00", label: "Tối", drug_ids: evening, instruction: "Kiểm tra lại nếu thuốc gây buồn ngủ, chóng mặt hoặc hạ huyết áp." }
   ];
 }
 
@@ -180,16 +180,16 @@ function buildInteractionAlerts(answer: BackendChatAnswer, drugIds: number[]) {
       {
         severity: "info",
         drug_ids: drugIds,
-        title: "Chua thay tuong tac ro",
-        message: "Backend/AI chua ghi nhan tuong tac cu the. Van nen xac nhan voi duoc si khi dung nhieu thuoc."
+        title: "Chưa thấy tương tác rõ",
+        message: "Backend/AI chưa ghi nhận tương tác cụ thể. Vẫn nên xác nhận với dược sĩ khi dùng nhiều thuốc."
       }
     ];
   }
 
   return interactions.map((item) => ({
-    severity: item.muc_do || "trung binh",
+    severity: item.muc_do || "trung bình",
     drug_ids: drugIds,
-    title: `${item.thuoc_1 || "Thuoc 1"} + ${item.thuoc_2 || "Thuoc 2"}`,
-    message: item.noi_dung || "Co thong tin can luu y ve tuong tac thuoc."
+    title: `${item.thuoc_1 || "Thuốc 1"} + ${item.thuoc_2 || "Thuốc 2"}`,
+    message: item.noi_dung || "Có thông tin cần lưu ý về tương tác thuốc."
   }));
 }
