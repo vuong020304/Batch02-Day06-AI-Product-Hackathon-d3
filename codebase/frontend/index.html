@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Giải thích đơn thuốc - Long Châu</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f0f4f8; color: #1a202c; min-height: 100vh; }
+  .container { max-width: 800px; margin: 0 auto; padding: 24px 16px; }
+  .header { text-align: center; margin-bottom: 32px; }
+  .header h1 { font-size: 24px; color: #2b6cb0; }
+  .header p { color: #718096; font-size: 14px; margin-top: 4px; }
+  .search-section { margin-bottom: 24px; }
+  .search-wrapper { position: relative; }
+  .search-input { width: 100%; padding: 14px 16px; font-size: 16px; border: 2px solid #e2e8f0; border-radius: 12px; outline: none; transition: border-color 0.2s; background: white; }
+  .search-input:focus { border-color: #4299e1; box-shadow: 0 0 0 3px rgba(66,153,225,0.15); }
+  .dropdown { position: absolute; top: 100%; left: 0; right: 0; background: white; border: 1px solid #e2e8f0; border-radius: 0 0 12px 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.1); z-index: 100; max-height: 320px; overflow-y: auto; display: none; }
+  .dropdown.active { display: block; }
+  .dropdown-item { padding: 10px 16px; cursor: pointer; border-bottom: 1px solid #f7fafc; display: flex; justify-content: space-between; align-items: center; }
+  .dropdown-item:last-child { border-bottom: none; border-radius: 0 0 12px 12px; }
+  .dropdown-item:hover { background: #ebf8ff; }
+  .dropdown-item .name { font-weight: 600; font-size: 15px; }
+  .dropdown-item .sub { font-size: 12px; color: #718096; }
+  .dropdown-item .score { font-size: 11px; color: #48bb78; background: #f0fff4; padding: 2px 8px; border-radius: 10px; }
+  .selected-drugs { margin-bottom: 24px; }
+  .selected-drugs h3 { font-size: 14px; color: #718096; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+  .selected-drugs h3 span { background: #4299e1; color: white; font-size: 12px; padding: 1px 8px; border-radius: 10px; }
+  .drug-card { background: white; border-radius: 12px; padding: 16px; margin-bottom: 12px; border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
+  .drug-card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
+  .drug-card-header .name { font-size: 16px; font-weight: 700; color: #2d3748; }
+  .drug-card-header .remove-btn { background: none; border: none; color: #fc8181; cursor: pointer; font-size: 20px; padding: 0 4px; line-height: 1; }
+  .drug-card .meta { font-size: 13px; color: #718096; margin-bottom: 8px; }
+  .drug-card .meta span { display: inline-block; background: #edf2f7; padding: 2px 8px; border-radius: 6px; margin-right: 6px; margin-bottom: 4px; }
+  .drug-card .section { margin-top: 8px; }
+  .drug-card .section-title { font-size: 12px; font-weight: 600; color: #a0aec0; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
+  .drug-card .section-content { font-size: 14px; color: #4a5568; line-height: 1.5; }
+  .drug-card .section-content ul { padding-left: 18px; margin: 4px 0; }
+  .drug-card .section-content li { font-size: 13px; margin-bottom: 2px; }
+  .drug-card .tag-interaction { display: inline-block; background: #fffaf0; color: #dd6b20; font-size: 11px; padding: 2px 8px; border-radius: 6px; border: 1px solid #fbd38d; margin-top: 4px; }
+  .chat-section { background: white; border-radius: 12px; border: 1px solid #e2e8f0; overflow: hidden; margin-bottom: 24px; }
+  .chat-header { padding: 14px 16px; background: #ebf8ff; font-weight: 600; font-size: 14px; color: #2b6cb0; border-bottom: 1px solid #bee3f8; }
+  .chat-messages { padding: 16px; max-height: 400px; overflow-y: auto; min-height: 60px; }
+  .chat-msg { margin-bottom: 12px; display: flex; }
+  .chat-msg.user { justify-content: flex-end; }
+  .chat-msg .bubble { max-width: 80%; padding: 10px 14px; border-radius: 12px; font-size: 14px; line-height: 1.5; }
+  .chat-msg.user .bubble { background: #4299e1; color: white; border-radius: 12px 12px 4px 12px; }
+  .chat-msg.bot .bubble { background: #f7fafc; color: #2d3748; border-radius: 12px 12px 12px 4px; border: 1px solid #e2e8f0; }
+  .chat-input-area { display: flex; padding: 12px 16px; border-top: 1px solid #e2e8f0; gap: 8px; }
+  .chat-input { flex: 1; padding: 10px 14px; border: 1px solid #e2e8f0; border-radius: 8px; font-size: 14px; outline: none; }
+  .chat-input:focus { border-color: #4299e1; }
+  .chat-send { padding: 10px 20px; background: #4299e1; color: white; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; }
+  .chat-send:disabled { background: #bee3f8; cursor: not-allowed; }
+  .chat-placeholder { text-align: center; color: #a0aec0; font-size: 14px; padding: 20px 0; }
+  .loading-dots::after { content: ''; animation: dots 1.5s steps(3, end) infinite; }
+  @keyframes dots { 0% { content: ''; } 33% { content: '.'; } 66% { content: '..'; } 100% { content: '...'; } }
+  .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: #48bb78; color: white; padding: 10px 20px; border-radius: 8px; font-size: 14px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); display: none; z-index: 200; }
+  .empty-state { text-align: center; padding: 48px 16px; color: #a0aec0; }
+  .empty-state p { font-size: 14px; margin-top: 8px; }
+  .no-data-msg { background: #fffff0; border: 1px solid #f6e05e; border-radius: 8px; padding: 8px 12px; font-size: 13px; color: #744210; margin-top: 8px; }
+  .backend-status { position: fixed; top: 12px; right: 12px; font-size: 11px; padding: 4px 10px; border-radius: 6px; background: #fc8181; color: white; }
+  .backend-status.ok { background: #48bb78; }
+</style>
+</head>
+<body>
+  <div class="backend-status" id="backendStatus">Đang kết nối...</div>
+  <div class="container">
+    <div class="header">
+      <h1>💊 Giải thích đơn thuốc</h1>
+      <p>Nhà thuốc Long Châu — Tra cứu thông tin thuốc dễ hiểu</p>
+    </div>
+
+    <div class="search-section">
+      <div class="search-wrapper">
+        <input class="search-input" id="searchInput" type="text" placeholder="🔍 Gõ tên thuốc... (VD: amlo, paracetamol, metformin)" autocomplete="off">
+        <div class="dropdown" id="dropdown"></div>
+      </div>
+    </div>
+
+    <div class="selected-drugs" id="selectedDrugs">
+      <h3>📋 Đơn thuốc tạm <span id="drugCount">0</span></h3>
+      <div id="drugList"></div>
+    </div>
+
+    <div class="chat-section" id="chatSection">
+      <div class="chat-header">💬 Hỏi về đơn thuốc</div>
+      <div class="chat-messages" id="chatMessages">
+        <div class="chat-placeholder">Chọn thuốc ở trên, sau đó đặt câu hỏi về đơn thuốc của bạn.</div>
+      </div>
+      <div class="chat-input-area">
+        <input class="chat-input" id="chatInput" type="text" placeholder="VD: Uống mấy thuốc này có sao không?" disabled>
+        <button class="chat-send" id="chatSend" disabled>Gửi</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+<script>
+const API = '';
+const searchInput = document.getElementById('searchInput');
+const dropdown = document.getElementById('dropdown');
+const drugList = document.getElementById('drugList');
+const drugCount = document.getElementById('drugCount');
+const chatMessages = document.getElementById('chatMessages');
+const chatInput = document.getElementById('chatInput');
+const chatSend = document.getElementById('chatSend');
+const toast = document.getElementById('toast');
+const backendStatus = document.getElementById('backendStatus');
+
+let selectedDrugs = [];
+let searchTimeout = null;
+
+function showToast(msg) { toast.textContent = msg; toast.style.display = 'block'; setTimeout(() => toast.style.display = 'none', 2500); }
+
+async function checkBackend() {
+  try {
+    const r = await fetch(`${API}/api/health`);
+    const d = await r.json();
+    backendStatus.textContent = `✅ ${d.drugs_count} thuốc`;
+    backendStatus.className = 'backend-status ok';
+  } catch { backendStatus.textContent = '❌ Offline'; backendStatus.className = 'backend-status'; }
+}
+checkBackend();
+
+searchInput.addEventListener('input', () => {
+  clearTimeout(searchTimeout);
+  const q = searchInput.value.trim();
+  if (q.length < 1) { dropdown.classList.remove('active'); return; }
+  searchTimeout = setTimeout(() => searchDrugs(q), 150);
+});
+
+async function searchDrugs(q) {
+  try {
+    const r = await fetch(`${API}/api/drugs/search?q=${encodeURIComponent(q)}`);
+    const d = await r.json();
+    renderDropdown(d.results);
+  } catch { dropdown.classList.remove('active'); }
+}
+
+function renderDropdown(results) {
+  dropdown.innerHTML = '';
+  if (!results.length) { dropdown.classList.remove('active'); return; }
+  results.forEach(drug => {
+    const div = document.createElement('div');
+    div.className = 'dropdown-item';
+    div.innerHTML = `<div><div class="name">${drug.ten_thuoc}</div><div class="sub">${drug.hoat_chat} · ${drug.dang_bao_che}</div></div><div class="score">${(drug.score * 100).toFixed(0)}%</div>`;
+    div.addEventListener('click', () => addDrug(drug));
+    dropdown.appendChild(div);
+  });
+  dropdown.classList.add('active');
+}
+
+function addDrug(drug) {
+  if (selectedDrugs.some(d => d.id === drug.id)) {
+    showToast('ℹ️ Thuốc này đã có trong đơn');
+    return;
+  }
+  selectedDrugs.push(drug);
+  searchInput.value = '';
+  dropdown.classList.remove('active');
+  renderSelectedDrugs();
+  fetchSummaries();
+}
+
+function removeDrug(id) {
+  selectedDrugs = selectedDrugs.filter(d => d.id !== id);
+  renderSelectedDrugs();
+  fetchSummaries();
+}
+
+function renderSelectedDrugs() {
+  drugCount.textContent = selectedDrugs.length;
+  if (selectedDrugs.length === 0) {
+    drugList.innerHTML = `<div class="empty-state"><div style="font-size: 32px;">💊</div><p>Chưa có thuốc nào. Gõ tên thuốc để bắt đầu.</p></div>`;
+    chatInput.disabled = true;
+    chatSend.disabled = true;
+    chatMessages.innerHTML = `<div class="chat-placeholder">Chọn thuốc ở trên, sau đó đặt câu hỏi về đơn thuốc của bạn.</div>`;
+    return;
+  }
+  drugList.innerHTML = selectedDrugs.map(d => `
+    <div class="drug-card" id="card-${d.id}">
+      <div class="drug-card-header">
+        <div class="name">💊 ${d.ten_thuoc}</div>
+        <button class="remove-btn" onclick="removeDrug(${d.id})">✕</button>
+      </div>
+      <div class="meta">
+        <span>${d.hoat_chat}</span>
+        <span>${d.dang_bao_che}</span>
+      </div>
+      <div class="section" id="summary-${d.id}">
+        <div class="section-content" style="color: #a0aec0; font-size: 13px;">Đang tải thông tin...</div>
+      </div>
+    </div>
+  `).join('');
+  chatInput.disabled = false;
+  chatSend.disabled = false;
+  chatMessages.innerHTML = `<div class="chat-placeholder">💬 Đặt câu hỏi về đơn thuốc ${selectedDrugs.length} thuốc này.</div>`;
+}
+
+async function fetchSummaries() {
+  if (selectedDrugs.length === 0) return;
+  try {
+    const ids = selectedDrugs.map(d => d.id);
+    const r = await fetch(`${API}/api/drugs/summary`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(ids),
+    });
+    const data = await r.json();
+    data.drugs.forEach(d => {
+      const el = document.getElementById(`summary-${d.id}`);
+      if (!el) return;
+      let sideEffects = d.tac_dung_phu.length ? d.tac_dung_phu.map(s => `<li>${s}</li>`).join('') : '<li>Không có dữ liệu</li>';
+      el.innerHTML = `
+        <div class="section-title">📌 Công dụng</div>
+        <div class="section-content">${d.chi_dinh || 'Không có dữ liệu'}</div>
+        <div class="section-title" style="margin-top: 8px;">💊 Liều dùng</div>
+        <div class="section-content">${d.lieu_dung || 'Không có dữ liệu'}</div>
+        <div class="section-title" style="margin-top: 8px;">⚠️ Tác dụng phụ</div>
+        <div class="section-content"><ul>${sideEffects}</ul></div>
+        ${d.tuong_tac && d.tuong_tac.length > 20 ? `<div class="tag-interaction">⚡ Có cảnh báo tương tác — hỏi AI để biết thêm</div>` : ''}
+      `;
+    });
+  } catch { }
+}
+
+chatSend.addEventListener('click', sendChat);
+chatInput.addEventListener('keydown', e => { if (e.key === 'Enter') sendChat(); });
+
+async function sendChat() {
+  const question = chatInput.value.trim();
+  if (!question || selectedDrugs.length === 0) return;
+  chatInput.value = '';
+  addChatMessage('user', question);
+  const loadingId = addChatMessage('bot', '🤖 Đang suy nghĩ...');
+  chatSend.disabled = true;
+  chatInput.disabled = true;
+  try {
+    const r = await fetch(`${API}/api/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        drugs: selectedDrugs.map(d => ({
+          ten_thuoc: d.ten_thuoc,
+          hoat_chat: d.hoat_chat || '',
+          chi_dinh: d.chi_dinh_tom_tat || '',
+          lieu_dung: '',
+          tac_dung_phu: '',
+          tuong_tac: '',
+        })),
+        question: question,
+      }),
+    });
+    const data = await r.json();
+    const loadingEl = document.getElementById(loadingId);
+    if (loadingEl) loadingEl.remove();
+    addChatMessage('bot', data.reply || '❌ Lỗi phản hồi');
+  } catch {
+    const loadingEl = document.getElementById(loadingId);
+    if (loadingEl) loadingEl.remove();
+    addChatMessage('bot', '❌ Lỗi kết nối server. Vui lòng thử lại.');
+  }
+  chatSend.disabled = false;
+  chatInput.disabled = false;
+  chatInput.focus();
+}
+
+function addChatMessage(role, text) {
+  const id = 'msg-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
+  const msg = document.createElement('div');
+  msg.className = `chat-msg ${role}`;
+  msg.id = id;
+  msg.innerHTML = `<div class="bubble">${text}</div>`;
+  chatMessages.appendChild(msg);
+  chatMessages.scrollTop = chatMessages.scrollHeight;
+  return id;
+}
+</script>
+</body>
+</html>
