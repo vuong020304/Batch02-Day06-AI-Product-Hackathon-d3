@@ -49,9 +49,17 @@ export type PlanResponse = {
   safety_note: string;
 };
 
+export type Usage = {
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+};
+
 export type ChatResponse = {
   answer: string;
   source: string;
   related_drugs: DrugSummary[];
   safety_note: string;
+  usage?: Usage;
+  time_ms?: number;
 };

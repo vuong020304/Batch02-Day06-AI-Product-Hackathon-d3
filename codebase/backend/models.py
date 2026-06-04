@@ -15,6 +15,7 @@ class Drug(BaseModel):
     tuong_tac: str
     than_trong: str
     duoc_luc: str
+    url: str
 
 
 class ChatRequest(BaseModel):

@@ -6,6 +6,7 @@ from models import Drug
 DATA_PATH = Path(__file__).parent.parent.parent / "data_c4ai" / "clean.jsonl"
 
 drugs: list[Drug] = []
+search_index: list[tuple[Drug, str, str]] = []
 
 
 def fix_encoding(text: str) -> str:
@@ -22,8 +23,9 @@ def normalize(text: str) -> str:
 
 
 def load_drugs():
-    global drugs
+    global drugs, search_index
     drugs.clear()
+    search_index.clear()
     with open(DATA_PATH, "r", encoding="utf-8", errors="replace") as f:
         for line in f:
             line = line.strip()
@@ -47,8 +49,10 @@ def load_drugs():
                 tuong_tac=fix_encoding(raw.get("tuong_tac", "")),
                 than_trong=fix_encoding(raw.get("than_trong", "")),
                 duoc_luc=fix_encoding(raw.get("duoc_luc", "")),
+                url=fix_encoding(raw.get("url", "")),
             )
             drugs.append(drug)
+            search_index.append((drug, normalize(drug.ten_thuoc), normalize(drug.hoat_chat)))
     print(f"Loaded {len(drugs)} drugs")
     return drugs
 
@@ -57,38 +61,51 @@ def search_drugs(query: str, limit: int = 10) -> list[dict]:
     if not query:
         return []
     q_norm = normalize(query)
+    if not q_norm:
+        return []
+
     scored = []
-    for drug in drugs:
-        name_norm = normalize(drug.ten_thuoc)
-        hoat_chat_norm = normalize(drug.hoat_chat)
+    fuzzy_candidates = []
+
+    for drug, name_norm, hoat_chat_norm in search_index:
         score = 0.0
         if name_norm.startswith(q_norm):
-            score = max(score, 0.9)
+            score = 0.95
         elif q_norm in name_norm:
-            score = max(score, 0.8 + 0.2 * (len(q_norm) / max(len(name_norm), 1)))
-        if q_norm in name_norm.split():
-            score = max(score, 0.75)
-        ratio = difflib.SequenceMatcher(None, q_norm, name_norm).ratio()
-        if ratio > 0.5:
-            score = max(score, ratio)
-        if q_norm in hoat_chat_norm:
-            score = max(score, 0.7 + 0.2 * (len(q_norm) / max(len(hoat_chat_norm), 1)))
+            score = 0.82 + 0.15 * (len(q_norm) / max(len(name_norm), 1))
+        elif q_norm in hoat_chat_norm:
+            score = 0.72 + 0.18 * (len(q_norm) / max(len(hoat_chat_norm), 1))
+        elif q_norm in name_norm.split():
+            score = 0.7
         elif q_norm in hoat_chat_norm.split():
-            score = max(score, 0.65)
+            score = 0.65
+        elif len(q_norm) >= 3:
+            fuzzy_candidates.append((drug, name_norm))
+
         if score > 0.4:
             scored.append((score, drug))
+
+    # Fuzzy matching is slower, so only use it for longer queries and only if
+    # exact/substring matching did not already provide enough candidates.
+    if len(q_norm) >= 3 and len(scored) < limit:
+        for drug, name_norm in fuzzy_candidates:
+            ratio = difflib.SequenceMatcher(None, q_norm, name_norm).ratio()
+            if ratio > 0.55:
+                scored.append((ratio, drug))
+
     scored.sort(key=lambda x: (-x[0], x[1].ten_thuoc))
     return [
-        {
-            "id": drug.id,
-            "ten_thuoc": drug.ten_thuoc,
-            "hoat_chat": drug.hoat_chat,
-            "dang_bao_che": drug.dang_bao_che,
-            "chi_dinh_tom_tat": (drug.chi_dinh[:120] + "...") if len(drug.chi_dinh) > 120 else drug.chi_dinh,
-            "score": round(score, 3),
-        }
-        for score, drug in scored[:limit]
-    ]
+            {
+                "id": drug.id,
+                "ten_thuoc": drug.ten_thuoc,
+                "hoat_chat": drug.hoat_chat,
+                "dang_bao_che": drug.dang_bao_che,
+                "chi_dinh_tom_tat": (drug.chi_dinh[:120] + "...") if len(drug.chi_dinh) > 120 else drug.chi_dinh,
+                "score": round(score, 3),
+                "url": drug.url,
+            }
+            for score, drug in scored[:limit]
+        ]
 
 
 def get_summaries(drug_ids: list[int]) -> list[dict]:
@@ -109,5 +126,6 @@ def get_summaries(drug_ids: list[int]) -> list[dict]:
             "chong_chi_dinh": (drug.chong_chi_dinh[:200] + "...") if len(drug.chong_chi_dinh) > 200 else drug.chong_chi_dinh,
             "tuong_tac": (drug.tuong_tac[:200] + "...") if len(drug.tuong_tac) > 200 else drug.tuong_tac,
             "than_trong": (drug.than_trong[:200] + "...") if len(drug.than_trong) > 200 else drug.than_trong,
+            "url": drug.url,
         })
     return result

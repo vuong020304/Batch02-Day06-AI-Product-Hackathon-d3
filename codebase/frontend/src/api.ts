@@ -1,4 +1,4 @@
-import type { ChatResponse, DrugDetail, PlanResponse, SearchResponse } from "./types";
+import type { ChatResponse, DrugDetail, PlanResponse, SearchResponse, Usage } from "./types";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "";
 const SAFETY_NOTE =
@@ -21,8 +21,8 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-export function searchDrugs(query: string): Promise<SearchResponse> {
-  return request<BackendSearchResponse>(`/api/search?q=${encodeURIComponent(query)}&limit=8`).then((data) => ({
+export function searchDrugs(query: string, signal?: AbortSignal): Promise<SearchResponse> {
+  return request<BackendSearchResponse>(`/api/search?q=${encodeURIComponent(query)}&limit=8`, { signal }).then((data) => ({
     query: data.query,
     count: data.count,
     fallback_message: data.fallback_message,
@@ -38,25 +38,16 @@ export function getDrug(drugId: number): Promise<DrugDetail> {
 }
 
 export async function planPrescription(drugIds: number[]): Promise<PlanResponse> {
-  const [summary, chat] = await Promise.all([
-    request<BackendSummaryResponse>("/api/summary", {
-      method: "POST",
-      body: JSON.stringify({ drug_ids: drugIds })
-    }),
-    request<BackendChatResponse>("/api/chat", {
-      method: "POST",
-      body: JSON.stringify({
-        drug_ids: drugIds,
-        question: "Hãy kiểm tra tương tác và đề xuất lịch uống thuốc trong ngày."
-      })
-    })
-  ]);
+  const summary = await request<BackendSummaryResponse>("/api/summary", {
+    method: "POST",
+    body: JSON.stringify({ drug_ids: drugIds })
+  });
 
   const drugs = summary.drugs.map(toDrugDetail);
   return {
     drugs,
     timeline: buildTimeline(drugs),
-    interactions: buildInteractionAlerts(chat.answer, drugIds),
+    interactions: buildInteractionAlerts(undefined, drugIds),
     safety_note: SAFETY_NOTE
   };
 }
@@ -69,8 +60,78 @@ export function askQuestion(drugIds: number[], question: string): Promise<ChatRe
     answer: data.answer.cau_tra_loi || data.answer.phan_tich || "Chưa có câu trả lời.",
     source: data.source,
     related_drugs: [],
-    safety_note: SAFETY_NOTE
+    safety_note: SAFETY_NOTE,
+    usage: data.usage,
+    time_ms: data.time_ms,
   }));
+}
+
+export type StreamCallbacks = {
+  onToken: (token: string) => void;
+  onDone: (usage: Usage | null, timeMs: number) => void;
+  onError: (error: string) => void;
+};
+
+export function askQuestionStream(
+  drugIds: number[],
+  question: string,
+  callbacks: StreamCallbacks,
+  signal?: AbortSignal,
+): Promise<void> {
+  return fetch(`${API_BASE}/api/chat/stream`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ drug_ids: drugIds, question }),
+    signal,
+  }).then(async (response) => {
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(text || `API error ${response.status}`);
+    }
+
+    const reader = response.body?.getReader();
+    if (!reader) throw new Error("Stream not supported");
+
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let usage: Usage | null = null;
+    let timeMs = 0;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
+
+      for (const line of lines) {
+        if (!line.startsWith("data: ")) continue;
+        try {
+          const parsed = JSON.parse(line.slice(6));
+          if (parsed.error) {
+            callbacks.onError(parsed.error);
+            return;
+          }
+          if (parsed.done) {
+            usage = parsed.usage || null;
+            timeMs = parsed.time_ms || 0;
+            continue;
+          }
+          if (parsed.token) {
+            callbacks.onToken(parsed.token);
+          }
+        } catch {
+          // skip malformed lines
+        }
+      }
+    }
+
+    callbacks.onDone(usage, timeMs);
+  }).catch((error) => {
+    if (error.name === "AbortError") return;
+    callbacks.onError(error.message || "Stream error");
+  });
 }
 
 type BackendSearchDrug = {
@@ -124,6 +185,8 @@ type BackendChatResponse = {
   answer: BackendChatAnswer;
   source: string;
   related_drug_ids: number[];
+  usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number };
+  time_ms?: number;
 };
 
 function toDrugSummary(drug: BackendSearchDrug): DrugDetail {
@@ -173,8 +236,8 @@ function buildTimeline(drugs: DrugDetail[]) {
   ];
 }
 
-function buildInteractionAlerts(answer: BackendChatAnswer, drugIds: number[]) {
-  const interactions = answer.tuong_tac || [];
+function buildInteractionAlerts(answer: BackendChatAnswer | undefined, drugIds: number[]) {
+  const interactions = answer?.tuong_tac || [];
   if (interactions.length === 0) {
     return [
       {
